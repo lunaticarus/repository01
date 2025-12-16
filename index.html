@@ -65,13 +65,15 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.561.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite": "https://esm.sh/vite@^7.3.0"
   }
 }
 </script>
 </head>
-  <body class="bg-brand-bg text-brand-dark antialiased selection:bg-brand-primary selection:text-white overflow-hidden fixed inset-0">
-    <div id="root" class="h-full w-full overflow-hidden"></div>
+  <body class="bg-brand-bg text-brand-dark antialiased selection:bg-brand-primary selection:text-white min-h-screen">
+    <div id="root" class="w-full min-h-screen"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

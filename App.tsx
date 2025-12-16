@@ -105,7 +105,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 px-5 py-6 overflow-y-auto no-scrollbar max-w-lg mx-auto w-full">
+      <main className="flex-1 px-5 py-6 max-w-lg mx-auto w-full">
         
         {/* HOME STATE */}
         {viewState === 'HOME' && (
