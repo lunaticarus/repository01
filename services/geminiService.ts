@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, IngredientCategory, ChildSuitabilityStatus } from "../types";
 
 // Helper to convert file to Base64 with compression and resizing
-// This prevents "Payload Too Large" errors and speeds up mobile uploads
+// Keeps the image optimized for API usage
 export const fileToGenerativePart = async (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -41,7 +41,6 @@ export const fileToGenerativePart = async (file: File): Promise<{ mimeType: stri
         ctx.drawImage(img, 0, 0, width, height);
 
         // Compress to JPEG at 80% quality
-        // This makes the payload much smaller for mobile networks
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         
         // Remove prefix "data:image/jpeg;base64,"
@@ -65,98 +64,107 @@ export const fileToGenerativePart = async (file: File): Promise<{ mimeType: stri
 };
 
 export const analyzeIngredients = async (images: { mimeType: string; data: string }[]): Promise<AnalysisResult> => {
-  // Explicitly check for API Key to give a better error message in Vercel
+  // Check for API Key
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API Key 未設定。請至 Vercel Settings > Environment Variables 新增 'API_KEY' 並重新部署。");
+    throw new Error("API Key 未設定。請檢查環境變數 API_KEY。");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `
-    你是一位專業、親切且擅長用白話文解釋的營養師。請分析這些食品包裝圖片。
-
+  // System Prompt for Gemini
+  const systemPrompt = `
+    你是一位專業、親切且擅長用白話文解釋的營養師。
+    你的任務是分析食品包裝圖片。
+    
     請遵循以下規則：
-    1. 整合所有圖片中的資訊，識別產品名稱與成份。
-    2. 用「白話文」（一般人、甚至阿嬤都能聽懂的語言）解釋成份。例如：不要只說「抗氧化劑」，要說「防止食物變壞的添加物」。
-    3. 特別評估「幼童（2-6歲）」是否適合食用此產品。
-    4. 成份分類：HEALTHY (有益/天然), NEUTRAL (普通), CAUTION (需注意), UNHEALTHY (不健康/加工過度)。
-
-    請回傳 JSON：
-    {
-      "productName": "產品名稱",
-      "summary": "簡短總結（白話文，請用溫暖的語氣）",
-      "childSuitability": {
-        "status": "SAFE" | "MODERATE" | "AVOID", 
-        "reason": "為什麼適合或不適合幼童的簡單原因"
-      },
-      "ingredients": [
-        { "name": "成份名", "description": "白話文解釋", "category": "HEALTHY" }
-      ],
-      "warnings": ["高糖", "有咖啡因"],
-      "pros": ["無防腐劑"]
-    }
+    1. 識別產品名稱與成份。
+    2. 用「白話文」（一般人、甚至阿嬤都能聽懂的語言）解釋成份。
+    3. 特別評估「幼童（2-6歲）」是否適合食用。
+    4. 成份分類：HEALTHY (有益), NEUTRAL (普通), CAUTION (需注意), UNHEALTHY (不健康)。
+    5. 幼童適合度狀態：SAFE (可以吃), MODERATE (要注意), AVOID (少吃比較好)。
   `;
 
-  // Construct parts from all images
-  const imageParts = images.map(img => ({
-    inlineData: {
-      mimeType: img.mimeType,
-      data: img.data
-    }
-  }));
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest',
-      contents: {
-        parts: [
-          ...imageParts,
-          { text: prompt }
-        ]
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      productName: { type: Type.STRING, description: "產品名稱" },
+      summary: { type: Type.STRING, description: "簡短總結" },
+      childSuitability: {
+        type: Type.OBJECT,
+        properties: {
+          status: { type: Type.STRING, description: "SAFE, MODERATE, or AVOID" },
+          reason: { type: Type.STRING, description: "原因說明" }
+        },
+        required: ["status", "reason"]
       },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
+      ingredients: {
+        type: Type.ARRAY,
+        items: {
           type: Type.OBJECT,
           properties: {
-            productName: { type: Type.STRING },
-            summary: { type: Type.STRING },
-            childSuitability: {
-              type: Type.OBJECT,
-              properties: {
-                status: { type: Type.STRING, enum: [ChildSuitabilityStatus.SAFE, ChildSuitabilityStatus.MODERATE, ChildSuitabilityStatus.AVOID] },
-                reason: { type: Type.STRING }
-              }
-            },
-            ingredients: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  category: { type: Type.STRING, enum: [IngredientCategory.HEALTHY, IngredientCategory.NEUTRAL, IngredientCategory.CAUTION, IngredientCategory.UNHEALTHY] }
-                }
-              }
-            },
-            warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
-            pros: { type: Type.ARRAY, items: { type: Type.STRING } }
-          }
+            name: { type: Type.STRING },
+            description: { type: Type.STRING },
+            category: { type: Type.STRING, description: "HEALTHY, NEUTRAL, CAUTION, or UNHEALTHY" }
+          },
+          required: ["name", "description", "category"]
         }
+      },
+      warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
+      pros: { type: Type.ARRAY, items: { type: Type.STRING } }
+    },
+    required: ["productName", "summary", "childSuitability", "ingredients", "warnings", "pros"]
+  };
+
+  try {
+    const parts = [
+      { text: "請分析這些圖片中的食品成份：" },
+      ...images.map(img => ({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.data
+        }
+      }))
+    ];
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: {
+        parts: parts
+      },
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
       }
     });
 
-    const text = response.text;
-    if (!text) throw new Error("AI 沒有回應資料");
-    
-    const parsed = JSON.parse(text);
+    const contentText = response.text;
+
+    if (!contentText) throw new Error("AI 沒有回傳內容");
+
+    // Parse JSON
+    let parsed;
+    try {
+        parsed = JSON.parse(contentText);
+    } catch (e) {
+        console.error("JSON Parse Error", contentText);
+        throw new Error("AI 回傳格式錯誤，請重試");
+    }
 
     const result: AnalysisResult = {
       productName: parsed.productName || "未知產品",
       summary: parsed.summary || "無法提供總結",
-      childSuitability: parsed.childSuitability || { status: ChildSuitabilityStatus.MODERATE, reason: "資料不足，請自行判斷" },
-      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
+      childSuitability: {
+        status: (parsed.childSuitability?.status as ChildSuitabilityStatus) || ChildSuitabilityStatus.MODERATE,
+        reason: parsed.childSuitability?.reason || "資料不足，請自行判斷"
+      },
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients.map((i: any) => ({
+        name: i.name,
+        description: i.description,
+        category: i.category as IngredientCategory
+      })) : [],
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
       pros: Array.isArray(parsed.pros) ? parsed.pros : []
     };
@@ -165,14 +173,6 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
 
   } catch (error: any) {
     console.error("Error analyzing ingredients:", error);
-    
-    // Pass through specific API Key errors
-    if (error.message?.includes("API Key") || error.message?.includes("API_KEY")) {
-        throw error;
-    }
-    
-    // Provide a more helpful error message including the actual system error
-    const errorMessage = error.message || "未知錯誤";
-    throw new Error(`分析失敗 (${errorMessage})。請試著減少照片數量或檢查網路連線。`);
+    throw new Error(error.message || "分析圖片時發生錯誤");
   }
 };

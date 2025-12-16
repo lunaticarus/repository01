@@ -1,6 +1,6 @@
 {
   "name": "FoodDecoder",
-  "description": "An iOS-friendly food ingredient analyzer that simplifies complex labels into easy-to-understand health insights.",
+  "description": "An iOS-friendly food ingredient analyzer powered by Grok (xAI) that simplifies complex labels into easy-to-understand health insights.",
   "requestFramePermissions": [
     "camera"
   ]
