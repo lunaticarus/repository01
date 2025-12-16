@@ -1,19 +1,65 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, IngredientCategory, ChildSuitabilityStatus } from "../types";
 
-// Helper to convert file to Base64
+// Helper to convert file to Base64 with compression and resizing
+// This prevents "Payload Too Large" errors and speeds up mobile uploads
 export const fileToGenerativePart = async (file: File): Promise<{ mimeType: string; data: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
-      const base64Data = base64String.split(',')[1];
-      resolve({
-        mimeType: file.type,
-        data: base64Data
-      });
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        // Calculate new dimensions (max 1024px to balance quality and size)
+        const MAX_DIMENSION = 1024;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_DIMENSION) {
+            height *= MAX_DIMENSION / width;
+            width = MAX_DIMENSION;
+          }
+        } else {
+          if (height > MAX_DIMENSION) {
+            width *= MAX_DIMENSION / height;
+            height = MAX_DIMENSION;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            reject(new Error("Could not get canvas context"));
+            return;
+        }
+        
+        // High quality scaling
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Compress to JPEG at 80% quality
+        // This makes the payload much smaller for mobile networks
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        
+        // Remove prefix "data:image/jpeg;base64,"
+        const base64Data = dataUrl.split(',')[1];
+        
+        resolve({
+          mimeType: 'image/jpeg',
+          data: base64Data
+        });
+      };
+      
+      img.onerror = () => reject(new Error("Failed to load image"));
+      
+      if (readerEvent.target?.result) {
+        img.src = readerEvent.target.result as string;
+      }
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
 };
@@ -102,7 +148,7 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
     });
 
     const text = response.text;
-    if (!text) throw new Error("No response from AI");
+    if (!text) throw new Error("AI 沒有回應資料");
     
     const parsed = JSON.parse(text);
 
@@ -119,10 +165,14 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
 
   } catch (error: any) {
     console.error("Error analyzing ingredients:", error);
-    // If it's our custom error, rethrow it. Otherwise generic error.
-    if (error.message.includes("API Key")) {
+    
+    // Pass through specific API Key errors
+    if (error.message?.includes("API Key") || error.message?.includes("API_KEY")) {
         throw error;
     }
-    throw new Error("無法分析圖片，請確保圖片清晰。");
+    
+    // Provide a more helpful error message including the actual system error
+    const errorMessage = error.message || "未知錯誤";
+    throw new Error(`分析失敗 (${errorMessage})。請試著減少照片數量或檢查網路連線。`);
   }
 };

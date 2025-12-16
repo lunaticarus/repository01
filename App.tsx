@@ -28,10 +28,11 @@ const App: React.FC = () => {
       const newImages: ImageAsset[] = [];
       
       for (const file of files) {
+        // fileToGenerativePart now handles compression
         const { mimeType, data } = await fileToGenerativePart(file);
         newImages.push({
           id: Math.random().toString(36).substr(2, 9),
-          url: URL.createObjectURL(file), // Create object URL for preview
+          url: URL.createObjectURL(file), // Create object URL for preview (uses original high-res)
           data,
           mimeType
         });
@@ -40,9 +41,9 @@ const App: React.FC = () => {
       setSelectedImages(prev => [...prev, ...newImages]);
       setViewState('PREVIEW');
       setError(null);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError("讀取圖片失敗，請重試");
+      setError(`讀取圖片失敗: ${e.message || "請重試"}`);
     }
   };
 
@@ -171,7 +172,7 @@ const App: React.FC = () => {
              </div>
              
              {error && (
-               <div className="bg-red-50 text-red-800 p-5 rounded-2xl my-4 text-center text-lg font-bold border border-red-200">
+               <div className="bg-red-50 text-red-800 p-5 rounded-2xl my-4 text-center text-lg font-bold border border-red-200 break-words shadow-sm">
                  ⚠️ {error}
                </div>
              )}
