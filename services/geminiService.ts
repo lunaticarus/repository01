@@ -1,4 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, IngredientCategory, ChildSuitabilityStatus } from "../types";
 
 // Helper to convert file to Base64 with compression and resizing
@@ -67,12 +66,10 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
   // Check for API Key
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API Key 未設定。請檢查環境變數 API_KEY。");
+    throw new Error("API Key 未設定。請至 Vercel Settings 輸入您的 xAI API Key (以 xai- 開頭)。");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-
-  // System Prompt for Gemini
+  // System Prompt for Grok
   const systemPrompt = `
     你是一位專業、親切且擅長用白話文解釋的營養師。
     你的任務是分析食品包裝圖片。
@@ -82,65 +79,68 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
     2. 用「白話文」（一般人、甚至阿嬤都能聽懂的語言）解釋成份。
     3. 特別評估「幼童（2-6歲）」是否適合食用。
     4. 成份分類：HEALTHY (有益), NEUTRAL (普通), CAUTION (需注意), UNHEALTHY (不健康)。
-    5. 幼童適合度狀態：SAFE (可以吃), MODERATE (要注意), AVOID (少吃比較好)。
+    
+    Output MUST be valid JSON only. Do not wrap in markdown code blocks.
+    JSON Schema:
+    {
+      "productName": "string",
+      "summary": "string",
+      "childSuitability": {
+        "status": "SAFE" | "MODERATE" | "AVOID",
+        "reason": "string"
+      },
+      "ingredients": [
+        { "name": "string", "description": "string", "category": "HEALTHY" | "NEUTRAL" | "CAUTION" | "UNHEALTHY" }
+      ],
+      "warnings": ["string"],
+      "pros": ["string"]
+    }
   `;
 
-  const responseSchema = {
-    type: Type.OBJECT,
-    properties: {
-      productName: { type: Type.STRING, description: "產品名稱" },
-      summary: { type: Type.STRING, description: "簡短總結" },
-      childSuitability: {
-        type: Type.OBJECT,
-        properties: {
-          status: { type: Type.STRING, description: "SAFE, MODERATE, or AVOID" },
-          reason: { type: Type.STRING, description: "原因說明" }
-        },
-        required: ["status", "reason"]
-      },
-      ingredients: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            description: { type: Type.STRING },
-            category: { type: Type.STRING, description: "HEALTHY, NEUTRAL, CAUTION, or UNHEALTHY" }
-          },
-          required: ["name", "description", "category"]
-        }
-      },
-      warnings: { type: Type.ARRAY, items: { type: Type.STRING } },
-      pros: { type: Type.ARRAY, items: { type: Type.STRING } }
-    },
-    required: ["productName", "summary", "childSuitability", "ingredients", "warnings", "pros"]
-  };
+  // Prepare messages for xAI (OpenAI compatible format)
+  const contentParts: any[] = [
+      { type: "text", text: "請分析這些圖片中的食品成份：" }
+  ];
+
+  // Add images
+  images.forEach(img => {
+      contentParts.push({
+          type: "image_url",
+          image_url: {
+              url: `data:${img.mimeType};base64,${img.data}`,
+              detail: "high"
+          }
+      });
+  });
 
   try {
-    const parts = [
-      { text: "請分析這些圖片中的食品成份：" },
-      ...images.map(img => ({
-        inlineData: {
-          mimeType: img.mimeType,
-          data: img.data
-        }
-      }))
-    ];
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: {
-        parts: parts
-      },
-      config: {
-        systemInstruction: systemPrompt,
-        temperature: 0.1,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-      }
+    const response = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model: "grok-2-vision-1212", // Latest Grok Vision model
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: contentParts }
+            ],
+            stream: false,
+            temperature: 0.1, // Low temperature for consistent JSON
+            response_format: { type: "json_object" } // Enforce JSON
+        })
     });
 
-    const contentText = response.text;
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        console.error("xAI API Error:", errData);
+        if (response.status === 401) throw new Error("API Key 無效，請檢查設定。");
+        throw new Error(`分析服務暫時無法使用 (${response.status})`);
+    }
+
+    const data = await response.json();
+    const contentText = data.choices?.[0]?.message?.content;
 
     if (!contentText) throw new Error("AI 沒有回傳內容");
 
@@ -156,15 +156,8 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
     const result: AnalysisResult = {
       productName: parsed.productName || "未知產品",
       summary: parsed.summary || "無法提供總結",
-      childSuitability: {
-        status: (parsed.childSuitability?.status as ChildSuitabilityStatus) || ChildSuitabilityStatus.MODERATE,
-        reason: parsed.childSuitability?.reason || "資料不足，請自行判斷"
-      },
-      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients.map((i: any) => ({
-        name: i.name,
-        description: i.description,
-        category: i.category as IngredientCategory
-      })) : [],
+      childSuitability: parsed.childSuitability || { status: ChildSuitabilityStatus.MODERATE, reason: "資料不足，請自行判斷" },
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
       pros: Array.isArray(parsed.pros) ? parsed.pros : []
     };
