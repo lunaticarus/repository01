@@ -19,7 +19,13 @@ export const fileToGenerativePart = async (file: File): Promise<{ mimeType: stri
 };
 
 export const analyzeIngredients = async (images: { mimeType: string; data: string }[]): Promise<AnalysisResult> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Explicitly check for API Key to give a better error message in Vercel
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API Key 未設定。請至 Vercel Settings > Environment Variables 新增 'API_KEY' 並重新部署。");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `
     你是一位專業、親切且擅長用白話文解釋的營養師。請分析這些食品包裝圖片。
@@ -111,8 +117,12 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
 
     return result;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error analyzing ingredients:", error);
+    // If it's our custom error, rethrow it. Otherwise generic error.
+    if (error.message.includes("API Key")) {
+        throw error;
+    }
     throw new Error("無法分析圖片，請確保圖片清晰。");
   }
 };
