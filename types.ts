@@ -25,7 +25,7 @@ export interface ChildSuitability {
 export interface AnalysisResult {
   productName: string;
   summary: string;
-  healthScore: number; // 0-100
+  // Removed healthScore
   ingredients: IngredientItem[];
   warnings: string[];
   pros: string[];

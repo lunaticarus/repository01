@@ -22,20 +22,18 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const prompt = `
-    你是一位專業、親切且擅長用白話文解釋的營養師。請分析這些食品包裝圖片（可能是同一產品的不同角度或多張連續圖）。
+    你是一位專業、親切且擅長用白話文解釋的營養師。請分析這些食品包裝圖片。
 
     請遵循以下規則：
     1. 整合所有圖片中的資訊，識別產品名稱與成份。
     2. 用「白話文」（一般人、甚至阿嬤都能聽懂的語言）解釋成份。例如：不要只說「抗氧化劑」，要說「防止食物變壞的添加物」。
-    3. 特別評估「幼童（3-6歲）」是否適合食用此產品。
-    4. 給出 0-100 健康評分。
-    5. 成份分類：HEALTHY (有益), NEUTRAL (普通), CAUTION (需注意), UNHEALTHY (不健康)。
+    3. 特別評估「幼童（2-6歲）」是否適合食用此產品。
+    4. 成份分類：HEALTHY (有益/天然), NEUTRAL (普通), CAUTION (需注意), UNHEALTHY (不健康/加工過度)。
 
     請回傳 JSON：
     {
       "productName": "產品名稱",
-      "summary": "簡短總結（白話文）",
-      "healthScore": 85,
+      "summary": "簡短總結（白話文，請用溫暖的語氣）",
       "childSuitability": {
         "status": "SAFE" | "MODERATE" | "AVOID", 
         "reason": "為什麼適合或不適合幼童的簡單原因"
@@ -58,7 +56,7 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest', // Using Flash Lite as requested
+      model: 'gemini-flash-lite-latest',
       contents: {
         parts: [
           ...imageParts,
@@ -72,7 +70,6 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
           properties: {
             productName: { type: Type.STRING },
             summary: { type: Type.STRING },
-            healthScore: { type: Type.INTEGER },
             childSuitability: {
               type: Type.OBJECT,
               properties: {
@@ -106,7 +103,6 @@ export const analyzeIngredients = async (images: { mimeType: string; data: strin
     const result: AnalysisResult = {
       productName: parsed.productName || "未知產品",
       summary: parsed.summary || "無法提供總結",
-      healthScore: typeof parsed.healthScore === 'number' ? parsed.healthScore : 50,
       childSuitability: parsed.childSuitability || { status: ChildSuitabilityStatus.MODERATE, reason: "資料不足，請自行判斷" },
       ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],

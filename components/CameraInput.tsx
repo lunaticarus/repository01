@@ -33,7 +33,7 @@ const CameraInput: React.FC<CameraInputProps> = ({ onImagesSelected, compact = f
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex flex-col items-center justify-center w-24 h-32 rounded-xl bg-white border-2 border-dashed border-gray-400 text-gray-600 active:bg-gray-100 shadow-sm"
+          className="flex flex-col items-center justify-center w-24 h-32 rounded-2xl bg-white border-2 border-dashed border-brand-primary/30 text-brand-primary active:bg-brand-primary/5 shadow-sm transition-colors"
         >
           <ImagePlus className="w-8 h-8 mb-2" />
           <span className="text-sm font-bold">加照片</span>
@@ -54,16 +54,17 @@ const CameraInput: React.FC<CameraInputProps> = ({ onImagesSelected, compact = f
         onChange={handleFileChange}
       />
       
-      {/* Primary Action - Huge Button */}
+      {/* Primary Action - Gradient Button */}
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="w-full flex flex-col items-center justify-center gap-2 bg-ios-blue active:bg-blue-700 text-white font-bold text-2xl py-8 rounded-3xl shadow-xl transition-transform transform active:scale-95 touch-manipulation border-b-4 border-blue-800"
+        className="w-full flex flex-col items-center justify-center gap-2 bg-gradient-primary text-white font-bold text-2xl py-8 rounded-[2rem] shadow-xl shadow-teal-700/20 transition-transform transform active:scale-95 touch-manipulation relative overflow-hidden group"
       >
-        <Camera className="w-10 h-10" />
+        <div className="absolute inset-0 bg-white/10 opacity-0 group-active:opacity-100 transition-opacity" />
+        <Camera className="w-12 h-12" />
         <span>拍照分析</span>
       </button>
 
-      {/* Secondary Action - Distinct Button */}
+      {/* Secondary Action - White Button with Brand Border */}
       <div className="text-center">
         <input 
              type="file" 
@@ -75,7 +76,7 @@ const CameraInput: React.FC<CameraInputProps> = ({ onImagesSelected, compact = f
         />
         <button 
           onClick={() => galleryInputRef.current?.click()}
-          className="w-full flex items-center justify-center gap-3 bg-white text-ios-blue font-bold text-xl py-6 rounded-3xl shadow-md border border-gray-200 active:bg-gray-50"
+          className="w-full flex items-center justify-center gap-3 bg-white text-brand-primary font-bold text-xl py-6 rounded-[2rem] shadow-md border-2 border-brand-primary/20 active:bg-brand-primary/5"
         >
           <Images className="w-8 h-8" />
           <span>從相簿選照片</span>
